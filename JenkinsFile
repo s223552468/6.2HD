@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        REPO_URL = 'https://github.com/your-username/task-management-app.git'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh 'mvn clean package' // Adjust this command if using a different build tool
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'mvn test' // Adjust this command if using a different test framework
+            }
+        }
+
+        stage('Code Quality Analysis') {
+            steps {
+                script {
+                    def scannerHome = tool 'SonarQube'
+                    withSonarQubeEnv('SonarQube') {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            steps {
+                script {
+                    docker.build('task-management-app').withRun('-p 8080:8080') { c ->
+                        sh 'docker exec -it ${c.id} /bin/sh -c "curl -f http://localhost:8080"'
+                    }
+                }
+            }
+        }
+
+        stage('Release to Production') {
+            steps {
+                script {
+                    input message: 'Deploy to production?', ok: 'Deploy'
+                    docker.build('task-management-app:latest').push('your-repo/task-management-app:latest')
+                    sh 'docker-compose -f docker-compose.prod.yml up -d'
+                }
+            }
+        }
+
+        stage('Monitoring and Alerting') {
+            steps {
+                script {
+                    sh 'datadog-agent status'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
